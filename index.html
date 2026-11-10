@@ -135,5 +135,186 @@ section{padding:48px 6%}
 <p>© 2026 Malykzm. All rights reserved.</p>
 </footer>
 
+
+<!-- MALYKZM CUSTOMER LOGIN AND WALLET -->
+<section id="malykzm-wallet" style="padding:30px 6%;background:#fff5ed">
+  <h2 style="color:#ed741f;text-align:center">Malykzm Customer Wallet</h2>
+
+  <div id="auth-area" style="max-width:420px;margin:20px auto">
+    <input id="email" type="email" placeholder="Email address" style="width:100%;padding:13px;margin:7px 0">
+    <input id="password" type="password" placeholder="Password" style="width:100%;padding:13px;margin:7px 0">
+    <button id="signup" style="padding:13px;background:#f47721;color:white;border:0;width:100%;margin:5px 0">Create Account</button>
+    <button id="login" style="padding:13px;background:#222;color:white;border:0;width:100%;margin:5px 0">Log In</button>
+  </div>
+
+  <div id="wallet-area" style="display:none;max-width:420px;margin:20px auto">
+    <h3>Your Wallet Balance</h3>
+    <h2 id="balance">₦0.00</h2>
+    <input id="amount" type="number" min="500" step="1" placeholder="Enter amount (minimum ₦500)" style="width:100%;padding:13px;margin:12px 0">
+    <button id="fund" style="padding:14px;background:#f47721;color:white;border:0;width:100%">Fund Wallet with Paystack</button>
+    <button id="refresh" style="padding:12px;margin-top:8px;width:100%">Refresh Wallet</button>
+    <button id="logout" style="padding:12px;margin-top:8px;width:100%">Log Out</button>
+    <h3 style="margin-top:20px">Recent Transactions</h3>
+    <div id="transactions"></div>
+  </div>
+
+  <p id="message" style="text-align:center;margin-top:15px"></p>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://umbvxcmumavszosavqob.supabase.co/rest/v1/";
+const SUPABASE_KEY = "sb_publishable__j1QTiPR59tRomNj-hbczg_5nEG57CX";
+const API_URL = "https://malykzm-payment-server.onrender.com";
+
+const client = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+const $ = id => document.getElementById(id);
+const message = text => $("message").textContent = text;
+
+async function loadWallet() {
+  const { data } = await client.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return;
+
+  const response = await fetch(API_URL + "/api/wallet", {
+    headers: { Authorization: "Bearer " + token }
+  });
+
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error);
+
+  $("balance").textContent =
+    "₦" + (result.balance_kobo / 100).toLocaleString("en-NG", {
+      minimumFractionDigits: 2
+    });
+
+  $("transactions").innerHTML = "";
+  result.transactions.forEach(item => {
+    const row = document.createElement("p");
+    row.textContent =
+      item.type + " - ₦" +
+      (item.amount_kobo / 100).toLocaleString("en-NG") +
+      " - " + item.status;
+    $("transactions").appendChild(row);
+  });
+}
+
+async function showAccount(session) {
+  $("auth-area").style.display = session ? "none" : "block";
+  $("wallet-area").style.display = session ? "block" : "none";
+  if (session) {
+    try { await loadWallet(); }
+    catch (error) { message(error.message); }
+  }
+}
+
+$("signup").onclick = async () => {
+  const { error } = await client.auth.signUp({
+    email: $("email").value.trim(),
+    password: $("password").value
+  });
+  message(error ? error.message : "Account created. Check your email to confirm your account, then log in.");
+};
+
+$("login").onclick = async () => {
+  const { data, error } = await client.auth.signInWithPassword({
+    email: $("email").value.trim(),
+    password: $("password").value
+  });
+  if (error) return message(error.message);
+  message("Login successful!");
+  await showAccount(data.session);
+};
+
+$("logout").onclick = async () => {
+  await client.auth.signOut();
+  message("You have logged out.");
+  await showAccount(null);
+};
+
+$("refresh").onclick = async () => {
+  try {
+    await loadWallet();
+    message("Wallet refreshed.");
+  } catch (error) { message(error.message); }
+};
+
+$("fund").onclick = async () => {
+  const amount = Number($("amount").value);
+
+  if (!Number.isSafeInteger(amount) || amount < 500 || amount > 10000000) {
+    return message("Enter an amount between ₦500 and ₦10,000,000.");
+  }
+
+  const { data } = await client.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return message("Please log in first.");
+
+  message("Preparing your payment...");
+
+  try {
+    const response = await fetch(API_URL + "/api/wallet/fund", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token
+      },
+      body: JSON.stringify({ amount })
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+
+    window.location.href = result.authorization_url;
+  } catch (error) {
+    message(error.message);
+  }
+};
+
+async function verifyPayment() {
+  const params = new URLSearchParams(window.location.search);
+  const reference = params.get("reference") || params.get("trxref");
+  if (!reference) return;
+
+  const { data } = await client.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) {
+    message("Please log in again to verify your payment.");
+    return;
+  }
+
+  message("Verifying your payment...");
+
+  try {
+    const response = await fetch(
+      API_URL + "/api/wallet/verify/" + encodeURIComponent(reference),
+      { headers: { Authorization: "Bearer " + token } }
+    );
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+
+    message("Payment successful! Your wallet has been updated.");
+    window.history.replaceState({}, "", window.location.pathname);
+    await loadWallet();
+  } catch (error) {
+    message(error.message);
+  }
+}
+
+client.auth.onAuthStateChange((_event, session) => {
+  showAccount(session);
+});
+
+(async () => {
+  const { data } = await client.auth.getSession();
+  await showAccount(data.session);
+  await verifyPayment();
+})();
+</script>
+
 </body>
 </html>
