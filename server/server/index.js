@@ -61,9 +61,9 @@ app.post("/api/wallet/fund", requireUser, async (req, res) => {
     if (!requireConfiguration(res)) return;
 
     const amount = req.body.amount;
-    if (!Number.isSafeInteger(amount) || amount < 100 || amount > 10000000) {
+    if (!Number.isSafeInteger(amount) || amount < 500 || amount > 10000000) {
       return res.status(400).json({
-        error: "Enter an amount between ₦100 and ₦10,000,000."
+        error: "Enter an amount between ₦500 and ₦10,000,000."
       });
     }
 
